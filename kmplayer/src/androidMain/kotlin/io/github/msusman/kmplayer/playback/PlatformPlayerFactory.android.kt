@@ -1,37 +1,37 @@
 package io.github.msusman.kmplayer.playback
 
+import android.content.Context
 import android.net.Uri
-import androidx.media3.common.MediaItem as ExoMediaItem
-import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import io.github.msusman.kmplayer.api.MediaItem
-import io.github.msusman.kmplayer.api.PlatformContext
 import io.github.msusman.kmplayer.api.PlayerError
 import io.github.msusman.kmplayer.cache.CachePolicy
 import io.github.msusman.kmplayer.logging.Logger
+import androidx.media3.common.MediaItem as ExoMediaItem
 
 actual fun createPlatformPlayer(
-    platformContext: PlatformContext?,
+    context: Any?,
     cachePolicy: CachePolicy,
     logger: Logger?
 ): PlatformPlayer = AndroidPlatformPlayer(
-    platformContext = platformContext,
+    context = context,
     cachePolicy = cachePolicy,
     logger = logger
 )
 
 internal class AndroidPlatformPlayer(
-    platformContext: PlatformContext?,
+    context: Any?,
     private val cachePolicy: CachePolicy,
     private val logger: Logger?
 ) : PlatformPlayer {
-    private val context = requireNotNull(platformContext) {
-        "Android PlatformContext is required to initialize ExoPlayer."
-    }.context.applicationContext
 
-    private val player: ExoPlayer = ExoPlayer.Builder(context).build()
+
+    private val context: Context = (context as? Context)
+        ?: error("Android Context is required to initialize ExoPlayer")
+    private val player: ExoPlayer = ExoPlayer.Builder(this.context).build()
     private var listener: PlatformPlayer.Listener? = null
     private var currentItem: MediaItem? = null
 
@@ -45,9 +45,11 @@ internal class AndroidPlatformPlayer(
                     Player.STATE_BUFFERING -> {
                         listener?.onBuffering(item, duration, position, player.bufferedPercentage)
                     }
+
                     Player.STATE_READY -> {
                         listener?.onReady(item, duration, position)
                     }
+
                     Player.STATE_ENDED -> {
                         listener?.onCompleted(item, duration)
                     }

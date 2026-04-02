@@ -1,17 +1,16 @@
 package io.github.msusman.kmplayer.playback
 
 import io.github.msusman.kmplayer.api.MediaItem
-import io.github.msusman.kmplayer.api.PlatformContext
 import io.github.msusman.kmplayer.cache.CachePolicy
 import io.github.msusman.kmplayer.logging.Logger
 
 internal class DefaultPlaybackEngine(
-    private val platformContext: PlatformContext?,
+    private val context: Any?,
     private val cachePolicy: CachePolicy,
     private val logger: Logger?
 ) : PlaybackEngine {
     private val platformPlayer: PlatformPlayer = createPlatformPlayer(
-        platformContext = platformContext,
+        context = context,
         cachePolicy = cachePolicy,
         logger = logger
     )

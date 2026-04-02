@@ -1,7 +1,6 @@
 package io.github.msusman.kmplayer.playback
 
 import io.github.msusman.kmplayer.api.MediaItem
-import io.github.msusman.kmplayer.api.PlatformContext
 import io.github.msusman.kmplayer.api.PlayerError
 import io.github.msusman.kmplayer.cache.CachePolicy
 import io.github.msusman.kmplayer.logging.Logger
@@ -26,7 +25,7 @@ import platform.Foundation.NSURL
 import platform.darwin.NSObject
 
 actual fun createPlatformPlayer(
-    platformContext: PlatformContext?,
+    platformContext: Any?,
     cachePolicy: CachePolicy,
     logger: Logger?
 ): PlatformPlayer = IOSPlatformPlayer(cachePolicy, logger)

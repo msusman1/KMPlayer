@@ -17,8 +17,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import coil3.compose.LocalPlatformContext
 import io.github.msusman.kmplayer.api.KMPlayerBuilder
-import io.github.msusman.kmplayer.api.PlatformContext
 
 
 @Composable
@@ -26,7 +26,8 @@ import io.github.msusman.kmplayer.api.PlatformContext
 fun App() {
     MaterialTheme {
         var showContent by remember { mutableStateOf(false) }
-        val player = remember { KMPlayerBuilder().platformContext(PlatformContext).build() }
+        val context: coil3.PlatformContext = LocalPlatformContext.current
+        val player = remember { KMPlayerBuilder().build(context) }
         Column(
             modifier = Modifier
                 .background(MaterialTheme.colorScheme.primaryContainer)
