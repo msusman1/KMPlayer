@@ -17,7 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
-import com.kmplayer.player.DefaultPlayer
+import io.github.msusman.kmplayer.api.KMPlayerBuilder
 
 
 @Composable
@@ -25,7 +25,7 @@ import com.kmplayer.player.DefaultPlayer
 fun App() {
     MaterialTheme {
         var showContent by remember { mutableStateOf(false) }
-        val player = remember { DefaultPlayer() }
+        val player = remember { KMPlayerBuilder().build() }
         Column(
             modifier = Modifier
                 .background(MaterialTheme.colorScheme.primaryContainer)
@@ -36,7 +36,7 @@ fun App() {
             Button(onClick = { showContent = !showContent }) {
                 Text("Click me!")
             }
-            Text("Player state: ${player.controller.state}")
+            Text("Player state: ${player.currentState()}")
             AnimatedVisibility(showContent) {
                 val greeting = remember { Greeting().greet() }
                 Column(
