@@ -21,5 +21,5 @@ class KMPlayerBuilder {
         apply { this.config = config.copy(enableBackgroundPlayback = enabled) }
 
     fun build(context: Any?): KMPlayer =
-        KMPlayer(MusicPlayerImpl(config.copy(platformContext = context)))
+        KMPlayer(MusicPlayerImpl(config.copy(context = context)))
 }

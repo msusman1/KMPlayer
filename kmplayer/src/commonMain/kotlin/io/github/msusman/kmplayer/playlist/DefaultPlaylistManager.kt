@@ -17,7 +17,11 @@ internal class DefaultPlaylistManager : PlaylistManager {
 
     override fun setPlaylist(playlist: Playlist, startIndex: Int) {
         this.playlist = playlist
-        this.index = startIndex.coerceIn(playlist.items.indices)
+        this.index = if (playlist.items.isEmpty()) {
+            -1
+        } else {
+            startIndex.coerceIn(playlist.items.indices)
+        }
     }
 
     override fun currentItem(): MediaItem? = playlist.items.getOrNull(index)

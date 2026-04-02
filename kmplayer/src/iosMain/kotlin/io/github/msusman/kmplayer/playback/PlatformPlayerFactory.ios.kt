@@ -10,6 +10,8 @@ import platform.AVFoundation.AVPlayerItem
 import platform.AVFoundation.AVPlayerItemDidPlayToEndTimeNotification
 import platform.AVFoundation.AVPlayerItemPlaybackStalledNotification
 import platform.AVFoundation.AVPlayerItemFailedToPlayToEndTimeNotification
+import platform.AVFoundation.AVPlayerItemStatusFailed
+import platform.AVFoundation.AVPlayerItemStatusReadyToPlay
 import platform.AVFoundation.currentItem
 import platform.AVFoundation.currentTime
 import platform.AVFoundation.duration
@@ -19,9 +21,13 @@ import platform.AVFoundation.rate
 import platform.AVFoundation.seekToTime
 import platform.AVFoundation.volume
 import platform.CoreMedia.CMTimeGetSeconds
+import platform.Foundation.NSKeyValueChangeNewKey
 import platform.Foundation.NSNotification
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSURL
+import platform.Foundation.NSNumber
+import platform.Foundation.addObserver
+import platform.Foundation.removeObserver
 import platform.darwin.NSObject
 
 actual fun createPlatformPlayer(
@@ -40,6 +46,8 @@ internal class IOSPlatformPlayer(
     private var endObserver: NSObject? = null
     private var failObserver: NSObject? = null
     private var stallObserver: NSObject? = null
+    private var statusObserver: PlayerItemStatusObserver? = null
+    private var observedItem: AVPlayerItem? = null
 
     override fun prepare(item: MediaItem, autoplay: Boolean) {
         logger?.d("IOSPlatformPlayer", "prepare: ${item.id}")
@@ -53,9 +61,6 @@ internal class IOSPlatformPlayer(
         attachObservers(playerItem)
         val avPlayer = AVPlayer(playerItem = playerItem)
         player = avPlayer
-
-        val durationMs = durationMs(playerItem)
-        listener?.onReady(item, durationMs, positionMs = 0L)
 
         if (autoplay) play()
     }
@@ -112,6 +117,7 @@ internal class IOSPlatformPlayer(
 
     private fun attachObservers(playerItem: AVPlayerItem) {
         detachObservers()
+        observedItem = playerItem
         val center = NSNotificationCenter.defaultCenter
         endObserver = center.addObserverForName(
             name = AVPlayerItemDidPlayToEndTimeNotification,
@@ -139,6 +145,24 @@ internal class IOSPlatformPlayer(
             val item = currentItem ?: return@addObserverForName
             listener?.onBuffering(item, durationMs(playerItem), positionMs(), bufferPercent = 0)
         }
+
+        statusObserver = PlayerItemStatusObserver { status ->
+            val item = currentItem ?: return@PlayerItemStatusObserver
+            when (status) {
+                AVPlayerItemStatusReadyToPlay -> {
+                    listener?.onReady(item, durationMs(playerItem), positionMs = 0L)
+                }
+                AVPlayerItemStatusFailed -> {
+                    listener?.onError(item, PlayerError.DecodeFailure("Playback failed"))
+                }
+            }
+        }
+        playerItem.addObserver(
+            observer = statusObserver as NSObject,
+            forKeyPath = "status",
+            options = NSKeyValueObservingOptionsNew,
+            context = null
+        )
     }
 
     private fun detachObservers() {
@@ -149,6 +173,14 @@ internal class IOSPlatformPlayer(
         endObserver = null
         failObserver = null
         stallObserver = null
+
+        observedItem?.let { item ->
+            statusObserver?.let { observer ->
+                item.removeObserver(observer, forKeyPath = "status")
+            }
+        }
+        statusObserver = null
+        observedItem = null
     }
 
     @OptIn(ExperimentalForeignApi::class)
@@ -165,5 +197,21 @@ internal class IOSPlatformPlayer(
         val seconds = CMTimeGetSeconds(avPlayer.currentTime())
         if (seconds.isNaN() || seconds.isInfinite()) return 0L
         return (seconds * 1000.0).toLong()
+    }
+}
+
+private class PlayerItemStatusObserver(
+    private val onStatusChanged: (Long) -> Unit
+) : NSObject() {
+      fun observeValueForKeyPath(
+        keyPath: String?,
+        ofObject: Any?,
+        change: Map<Any?, *>?,
+        context: Any?
+    ) {
+        if (keyPath != "status") return
+        val value = change?.get(NSKeyValueChangeNewKey)
+        val status = (value as? NSNumber)?.longLongValue ?: return
+        onStatusChanged(status)
     }
 }

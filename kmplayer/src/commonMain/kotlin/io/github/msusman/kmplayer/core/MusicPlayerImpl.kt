@@ -18,7 +18,7 @@ internal class MusicPlayerImpl(
     private val listeners = LinkedHashSet<PlayerListener>()
 
     private val engine: PlaybackEngine = DefaultPlaybackEngine(
-        context = config.platformContext,
+        context = config.context,
         cachePolicy = config.cachePolicy,
         logger = config.logger
     )

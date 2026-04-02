@@ -34,10 +34,12 @@ internal class AndroidPlatformPlayer(
     private val player: ExoPlayer = ExoPlayer.Builder(this.context).build()
     private var listener: PlatformPlayer.Listener? = null
     private var currentItem: MediaItem? = null
+    private var lastPlaybackState: Int = Player.STATE_IDLE
 
     init {
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
+                lastPlaybackState = state
                 val item = currentItem ?: return
                 val duration = safeDuration()
                 val position = player.currentPosition.coerceAtLeast(0L)
@@ -63,6 +65,7 @@ internal class AndroidPlatformPlayer(
                 if (isPlaying) {
                     listener?.onPlaying(item, duration, position, player.playbackParameters.speed)
                 } else {
+                    if (lastPlaybackState == Player.STATE_ENDED) return
                     listener?.onPaused(item, duration, position)
                 }
             }
