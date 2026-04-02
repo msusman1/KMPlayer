@@ -9,6 +9,7 @@ class KMPlayerBuilder {
     private var config: KMPlayerConfig = KMPlayerConfig()
 
     fun config(config: KMPlayerConfig) = apply { this.config = config }
+    fun platformContext(context: PlatformContext) = apply { this.config = config.copy(platformContext = context) }
     fun cachePolicy(policy: CachePolicy) = apply { this.config = config.copy(cachePolicy = policy) }
     fun logger(logger: Logger) = apply { this.config = config.copy(logger = logger) }
     fun analyticsTracker(tracker: AnalyticsTracker) = apply { this.config = config.copy(analyticsTracker = tracker) }

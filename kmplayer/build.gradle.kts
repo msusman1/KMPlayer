@@ -35,6 +35,9 @@ kotlin {
         commonMain.dependencies {
             // No external deps for the core player API/state machine.
         }
+        androidMain.dependencies {
+            implementation(libs.androidx.media3.exoplayer)
+        }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
         }

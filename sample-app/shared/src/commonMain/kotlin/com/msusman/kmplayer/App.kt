@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import io.github.msusman.kmplayer.api.KMPlayerBuilder
+import io.github.msusman.kmplayer.api.PlatformContext
 
 
 @Composable
@@ -25,7 +26,7 @@ import io.github.msusman.kmplayer.api.KMPlayerBuilder
 fun App() {
     MaterialTheme {
         var showContent by remember { mutableStateOf(false) }
-        val player = remember { KMPlayerBuilder().build() }
+        val player = remember { KMPlayerBuilder().platformContext(PlatformContext).build() }
         Column(
             modifier = Modifier
                 .background(MaterialTheme.colorScheme.primaryContainer)

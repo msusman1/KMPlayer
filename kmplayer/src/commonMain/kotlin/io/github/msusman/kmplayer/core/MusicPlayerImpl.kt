@@ -18,6 +18,7 @@ internal class MusicPlayerImpl(
     private val listeners = LinkedHashSet<PlayerListener>()
 
     private val engine: PlaybackEngine = DefaultPlaybackEngine(
+        platformContext = config.platformContext,
         cachePolicy = config.cachePolicy,
         logger = config.logger
     )
@@ -28,6 +29,42 @@ internal class MusicPlayerImpl(
 
     init {
         playlists.setPlaybackMode(config.defaultPlaybackMode)
+        engine.setListener(object : PlaybackEngine.Listener {
+            override fun onBuffering(item: MediaItem, durationMs: Long, positionMs: Long, bufferPercent: Int) {
+                state = PlayerState.Buffering(item, durationMs, positionMs, bufferPercent)
+                emitState()
+            }
+
+            override fun onReady(item: MediaItem, durationMs: Long, positionMs: Long) {
+                state = PlayerState.Ready(item, durationMs, positionMs)
+                emitState()
+            }
+
+            override fun onPlaying(item: MediaItem, durationMs: Long, positionMs: Long, speed: Float) {
+                state = PlayerState.Playing(item, durationMs, positionMs, speed)
+                emitState()
+            }
+
+            override fun onPaused(item: MediaItem, durationMs: Long, positionMs: Long) {
+                state = PlayerState.Paused(item, durationMs, positionMs)
+                emitState()
+            }
+
+            override fun onCompleted(item: MediaItem, durationMs: Long) {
+                state = PlayerState.Completed(item, durationMs)
+                emitState()
+            }
+
+            override fun onError(item: MediaItem?, error: io.github.msusman.kmplayer.api.PlayerError) {
+                state = PlayerState.Error(error, lastKnownState = state)
+                emitState()
+                emitEvent(PlayerEvent.ErrorOccurred(error))
+            }
+
+            override fun onPosition(positionMs: Long) {
+                emitEvent(PlayerEvent.PositionChanged(positionMs))
+            }
+        })
     }
 
     override fun load(item: MediaItem, autoplay: Boolean) {
