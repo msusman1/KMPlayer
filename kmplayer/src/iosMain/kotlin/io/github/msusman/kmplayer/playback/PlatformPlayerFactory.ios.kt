@@ -5,92 +5,102 @@ import io.github.msusman.kmplayer.api.PlayerError
 import io.github.msusman.kmplayer.cache.CachePolicy
 import io.github.msusman.kmplayer.logging.Logger
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import platform.AVFoundation.AVPlayer
 import platform.AVFoundation.AVPlayerItem
 import platform.AVFoundation.AVPlayerItemDidPlayToEndTimeNotification
-import platform.AVFoundation.AVPlayerItemPlaybackStalledNotification
-import platform.AVFoundation.AVPlayerItemFailedToPlayToEndTimeNotification
-import platform.AVFoundation.AVPlayerItemStatusFailed
-import platform.AVFoundation.AVPlayerItemStatusReadyToPlay
-import platform.AVFoundation.currentItem
+import platform.AVFoundation.addPeriodicTimeObserverForInterval
 import platform.AVFoundation.currentTime
 import platform.AVFoundation.duration
 import platform.AVFoundation.pause
 import platform.AVFoundation.play
 import platform.AVFoundation.rate
+import platform.AVFoundation.removeTimeObserver
+import platform.AVFoundation.replaceCurrentItemWithPlayerItem
 import platform.AVFoundation.seekToTime
 import platform.AVFoundation.volume
 import platform.CoreMedia.CMTimeGetSeconds
-import platform.Foundation.NSKeyValueChangeNewKey
-import platform.Foundation.NSNotification
+import platform.CoreMedia.CMTimeMake
+import platform.Foundation.NSKeyValueObservingOptionNew
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSURL
-import platform.Foundation.NSNumber
 import platform.Foundation.addObserver
-import platform.Foundation.removeObserver
 import platform.darwin.NSObject
+import platform.darwin.dispatch_get_main_queue
 
 actual fun createPlatformPlayer(
-    platformContext: Any?,
+    context: Any?,
     cachePolicy: CachePolicy,
     logger: Logger?
 ): PlatformPlayer = IOSPlatformPlayer(cachePolicy, logger)
 
+
+@OptIn(ExperimentalForeignApi::class)
 internal class IOSPlatformPlayer(
     private val cachePolicy: CachePolicy,
     private val logger: Logger?
 ) : PlatformPlayer {
+
     private var player: AVPlayer? = null
-    private var currentItem: MediaItem? = null
+    private var playerItem: AVPlayerItem? = null
+
     private var listener: PlatformPlayer.Listener? = null
-    private var endObserver: NSObject? = null
-    private var failObserver: NSObject? = null
-    private var stallObserver: NSObject? = null
-    private var statusObserver: PlayerItemStatusObserver? = null
-    private var observedItem: AVPlayerItem? = null
+    private var currentItem: MediaItem? = null
+
+    private var timeObserver: Any? = null
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    // MARK: Prepare
 
     override fun prepare(item: MediaItem, autoplay: Boolean) {
         logger?.d("IOSPlatformPlayer", "prepare: ${item.id}")
+
         currentItem = item
+
         val url = NSURL.URLWithString(item.uri)
         if (url == null) {
-            listener?.onError(item, PlayerError.SourceUnavailable(item.uri, "Invalid URL"))
+            listener?.onError(item, PlayerError.Unknown("Invalid URL", null))
             return
         }
-        val playerItem = AVPlayerItem(URL = url)
-        attachObservers(playerItem)
-        val avPlayer = AVPlayer(playerItem = playerItem)
-        player = avPlayer
 
-        if (autoplay) play()
+        playerItem = AVPlayerItem(url)
+        player = AVPlayer(playerItem = playerItem)
+
+        observePlayerItem()
+        startProgressUpdates()
+
+        if (autoplay) {
+            play()
+        }
     }
+
+    // MARK: Playback Controls
 
     override fun play() {
         logger?.d("IOSPlatformPlayer", "play")
-        val item = currentItem ?: return
         player?.play()
-        listener?.onPlaying(item, durationMs(player?.currentItem), positionMs(), speed = 1f)
+        notifyPlaying()
     }
 
     override fun pause() {
         logger?.d("IOSPlatformPlayer", "pause")
-        val item = currentItem ?: return
         player?.pause()
-        listener?.onPaused(item, durationMs(player?.currentItem), positionMs())
+        notifyPaused()
     }
 
-    @OptIn(ExperimentalForeignApi::class)
     override fun stop() {
         logger?.d("IOSPlatformPlayer", "stop")
-        val item = currentItem ?: return
         player?.pause()
-        player?.seekToTime(platform.CoreMedia.CMTimeMake(value = 0, timescale = 1))
-        listener?.onPaused(item, durationMs(player?.currentItem), 0L)
+        player?.replaceCurrentItemWithPlayerItem(null)
     }
-    @OptIn(ExperimentalForeignApi::class)
+
     override fun seekTo(positionMs: Long) {
         logger?.d("IOSPlatformPlayer", "seekTo: $positionMs")
-        val time = platform.CoreMedia.CMTimeMake(value = positionMs, timescale = 1000)
+
+        val time = CMTimeMake(value = positionMs, timescale = 1000)
         player?.seekToTime(time)
     }
 
@@ -106,112 +116,92 @@ internal class IOSPlatformPlayer(
 
     override fun release() {
         logger?.d("IOSPlatformPlayer", "release")
-        detachObservers()
+
+        timeObserver?.let {
+            player?.removeTimeObserver(it)
+            timeObserver = null
+        }
+
+        scope.cancel()
+
         player?.pause()
         player = null
+        playerItem = null
     }
 
     override fun setListener(listener: PlatformPlayer.Listener?) {
         this.listener = listener
     }
 
-    private fun attachObservers(playerItem: AVPlayerItem) {
-        detachObservers()
-        observedItem = playerItem
-        val center = NSNotificationCenter.defaultCenter
-        endObserver = center.addObserverForName(
-            name = AVPlayerItemDidPlayToEndTimeNotification,
-            `object` = playerItem,
-            queue = null
-        ) { _: NSNotification? ->
-            val item = currentItem ?: return@addObserverForName
-            listener?.onCompleted(item, durationMs(playerItem))
-        }
+    // MARK: Observers
 
-        failObserver = center.addObserverForName(
-            name = AVPlayerItemFailedToPlayToEndTimeNotification,
-            `object` = playerItem,
-            queue = null
-        ) { _: NSNotification? ->
-            val item = currentItem
-            listener?.onError(item, PlayerError.DecodeFailure("Playback failed"))
-        }
+    private fun observePlayerItem() {
+        val item = playerItem ?: return
 
-        stallObserver = center.addObserverForName(
-            name = AVPlayerItemPlaybackStalledNotification,
-            `object` = playerItem,
-            queue = null
-        ) { _: NSNotification? ->
-            val item = currentItem ?: return@addObserverForName
-            listener?.onBuffering(item, durationMs(playerItem), positionMs(), bufferPercent = 0)
-        }
-
-        statusObserver = PlayerItemStatusObserver { status ->
-            val item = currentItem ?: return@PlayerItemStatusObserver
-            when (status) {
-                AVPlayerItemStatusReadyToPlay -> {
-                    listener?.onReady(item, durationMs(playerItem), positionMs = 0L)
-                }
-                AVPlayerItemStatusFailed -> {
-                    listener?.onError(item, PlayerError.DecodeFailure("Playback failed"))
-                }
-            }
-        }
-        playerItem.addObserver(
-            observer = statusObserver as NSObject,
+        item.addObserver(
+            observer = object : NSObject() {},
             forKeyPath = "status",
-            options = NSKeyValueObservingOptionsNew,
+            options = NSKeyValueObservingOptionNew,
             context = null
+        )
+
+        // Completion
+        NSNotificationCenter.defaultCenter.addObserverForName(
+            name = AVPlayerItemDidPlayToEndTimeNotification,
+            `object` = item,
+            queue = null
+        ) {
+            val media = currentItem ?: return@addObserverForName
+            listener?.onCompleted(media, durationMs())
+        }
+    }
+
+    private fun startProgressUpdates() {
+        val interval = CMTimeMake(value = 500, timescale = 1000)
+
+        timeObserver = player?.addPeriodicTimeObserverForInterval(
+            interval = interval,
+            queue = dispatch_get_main_queue()
+        ) { time ->
+
+            val position = CMTimeGetSeconds(time) * 1000
+            listener?.onPosition(position.toLong())
+        }
+    }
+
+    // MARK: State Notifications
+
+    private fun notifyPlaying() {
+        val item = currentItem ?: return
+        listener?.onPlaying(
+            item,
+            durationMs(),
+            positionMs(),
+            player?.rate ?: 1f
         )
     }
 
-    private fun detachObservers() {
-        val center = NSNotificationCenter.defaultCenter
-        endObserver?.let { center.removeObserver(it) }
-        failObserver?.let { center.removeObserver(it) }
-        stallObserver?.let { center.removeObserver(it) }
-        endObserver = null
-        failObserver = null
-        stallObserver = null
-
-        observedItem?.let { item ->
-            statusObserver?.let { observer ->
-                item.removeObserver(observer, forKeyPath = "status")
-            }
-        }
-        statusObserver = null
-        observedItem = null
+    private fun notifyPaused() {
+        val item = currentItem ?: return
+        listener?.onPaused(
+            item,
+            durationMs(),
+            positionMs()
+        )
     }
 
-    @OptIn(ExperimentalForeignApi::class)
-    private fun durationMs(item: AVPlayerItem?): Long {
-        if (item == null) return 0L
-        val seconds = CMTimeGetSeconds(item.duration)
-        if (seconds.isNaN() || seconds.isInfinite()) return 0L
-        return (seconds * 1000.0).toLong()
+    // MARK: Helpers
+
+
+    private fun durationMs(): Long {
+        val duration = playerItem?.duration ?: return 0L
+        val seconds = CMTimeGetSeconds(duration)
+        return if (seconds.isNaN()) 0L else (seconds * 1000).toLong()
     }
 
-    @OptIn(ExperimentalForeignApi::class)
     private fun positionMs(): Long {
-        val avPlayer = player ?: return 0L
-        val seconds = CMTimeGetSeconds(avPlayer.currentTime())
-        if (seconds.isNaN() || seconds.isInfinite()) return 0L
-        return (seconds * 1000.0).toLong()
-    }
-}
-
-private class PlayerItemStatusObserver(
-    private val onStatusChanged: (Long) -> Unit
-) : NSObject() {
-      fun observeValueForKeyPath(
-        keyPath: String?,
-        ofObject: Any?,
-        change: Map<Any?, *>?,
-        context: Any?
-    ) {
-        if (keyPath != "status") return
-        val value = change?.get(NSKeyValueChangeNewKey)
-        val status = (value as? NSNumber)?.longLongValue ?: return
-        onStatusChanged(status)
+        val time = player?.currentTime() ?: return 0L
+        val seconds = CMTimeGetSeconds(time)
+        return if (seconds.isNaN()) 0L else (seconds * 1000).toLong()
     }
 }

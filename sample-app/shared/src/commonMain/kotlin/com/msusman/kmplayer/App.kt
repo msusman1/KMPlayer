@@ -20,8 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import coil3.compose.LocalPlatformContext
+import io.github.msusman.kmplayer.api.KMPlayer
 import io.github.msusman.kmplayer.api.MediaItem
-import io.github.msusman.kmplayer.api.KMPlayerBuilder
 import io.github.msusman.kmplayer.api.PlayerListener
 import io.github.msusman.kmplayer.api.PlayerState
 
@@ -32,7 +32,7 @@ fun App() {
     MaterialTheme {
         var showContent by remember { mutableStateOf(false) }
         val context: coil3.PlatformContext = LocalPlatformContext.current
-        val player = remember(context) { KMPlayerBuilder().build(context) }
+        val player = remember(context) { KMPlayer.Builder().build(context) }
         val playerState = remember { mutableStateOf(player.currentState()) }
         val testItem = remember {
             MediaItem(
